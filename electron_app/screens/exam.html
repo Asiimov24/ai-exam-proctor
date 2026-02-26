@@ -1,0 +1,349 @@
+<!DOCTYPE html>
+<html>
+<head>
+<title>Exam</title>
+<style>
+body { margin:0; font-family:Arial; display:flex; height:100vh; }
+
+.left { width:75%; padding:20px; border-right:2px solid #ccc; }
+.right { width:25%; padding:15px; }
+
+video { width:100%; border:2px solid black; }
+
+.timer { font-weight:bold; color:red; font-size:18px; }
+
+.q-number {
+    padding:6px 10px;
+    margin:4px;
+    border:1px solid black;
+    cursor:pointer;
+    display:inline-block;
+}
+
+.answered { background:green; color:white; }
+.review { background:blue; color:white; }
+.seen { background:red; color:white; }
+
+.option-row { margin:8px 0; }
+
+.option-row label {
+    cursor:pointer;
+}
+
+.block-popup {
+    position:fixed;
+    top:0; left:0;
+    width:100%;
+    height:100%;
+    background:rgba(0,0,0,0.7);
+    display:flex;
+    justify-content:center;
+    align-items:center;
+    color:white;
+    font-size:22px;
+}
+</style>
+</head>
+
+<body>
+
+<div class="left">
+
+<div class="timer">
+Time Remaining: <span id="time"></span>
+</div>
+
+<h2 id="subjectTitle"></h2>
+<h3 id="questionNumber"></h3>
+<p id="questionText"></p>
+
+<div id="options"></div>
+
+<br>
+<button onclick="nextQuestion()">Next</button>
+<button onclick="submitExam()">Submit Exam</button>
+<button id="reviewBtn" style="display:none;" onclick="markReview()">Review Later</button>
+
+</div>
+
+<div class="right">
+
+<video id="video" autoplay></video>
+
+<h4>Status Legend</h4>
+<div style="color:green;">Green → Answered</div>
+<div style="color:blue;">Blue → Review Later</div>
+<div style="color:red;">Red → Seen but not answered</div>
+
+<hr>
+
+<div id="subjectBlocks"></div>
+
+</div>
+
+<script>
+
+let token = localStorage.getItem("access_token");
+let sessionId = localStorage.getItem("session_id");
+let examId = localStorage.getItem("exam_id");
+let monitoringActive = true;
+
+let questions = [];
+let durationMinutes = 0;
+
+let currentIndex = 0;
+let answers = {};
+let statusMap = {};
+let submitted = false;
+
+/* MONITORING */
+async function monitorLoop() {
+
+    if (!monitoringActive || submitted) return;
+
+    const video = document.querySelector("video");
+
+    const canvas = document.createElement("canvas");
+    canvas.width = video.videoWidth;
+    canvas.height = video.videoHeight;
+
+    const ctx = canvas.getContext("2d");
+    ctx.drawImage(video, 0, 0);
+
+    const blob = await new Promise(resolve =>
+        canvas.toBlob(resolve, "image/jpeg")
+    );
+
+    const formData = new FormData();
+    formData.append("file", blob);
+
+    try {
+
+        const response = await fetch(
+            `http://localhost:8001/analyze/${sessionId}`,
+            {
+                method: "POST",
+                body: formData
+            }
+        );
+
+        const data = await response.json();
+
+        if (data.backend?.status === "terminated") {
+            monitoringActive = false;
+            const reason = data.backend.reason;
+
+            let message = "Exam terminated.";
+
+            if (reason === "no_face")
+                 message = "Exam terminated: Face not detected repeatedly.";
+
+            if (reason === "mobile_phone_detected")
+                 message = "Exam terminated: Mobile phone detected.";
+
+            showTerminationPopup(message);
+            return;
+        }
+
+    } catch (err) {
+        console.error("Monitoring error:", err);
+    }
+
+    setTimeout(monitorLoop, 2000);
+}
+
+/* TERMINATION POP UP  */
+function showTerminationPopup(message) {
+
+    submitted = true;
+
+    document.body.innerHTML =
+        `<div class="block-popup">
+            ${message}<br><br>
+            Please contact administrator.
+        </div>`;
+}
+
+/* LOAD QUESTIONS */
+async function loadQuestions() {
+
+const response = await fetch(
+`http://localhost:8000/exams/${examId}/questions`,
+{ headers:{ Authorization:`Bearer ${token}` } }
+);
+
+const data = await response.json();
+
+durationMinutes = data.duration;
+questions = data.questions;
+
+groupSubjects();
+loadQuestion(0);
+startTimer();
+}
+
+/* GROUP SUBJECTS */
+function groupSubjects() {
+
+const container = document.getElementById("subjectBlocks");
+container.innerHTML = "";
+
+let grouped = {};
+
+questions.forEach((q,i)=>{
+if(!grouped[q.subject]) grouped[q.subject] = [];
+grouped[q.subject].push({index:i, id:q.id});
+statusMap[i] = "not_seen";
+});
+
+for(const subject in grouped){
+
+let title = document.createElement("h4");
+title.innerText = subject;
+container.appendChild(title);
+
+grouped[subject].forEach(q=>{
+let div = document.createElement("div");
+div.className = "q-number";
+div.innerText = q.index+1;
+div.onclick = ()=> loadQuestion(q.index);
+container.appendChild(div);
+});
+}
+}
+
+/* LOAD QUESTION */
+function loadQuestion(index){
+
+currentIndex = index;
+let q = questions[index];
+
+document.getElementById("subjectTitle").innerText = q.subject;
+document.getElementById("questionNumber").innerText = "Question "+(index+1);
+document.getElementById("questionText").innerText = q.question_text;
+
+let optionsDiv = document.getElementById("options");
+optionsDiv.innerHTML = "";
+
+["A","B","C","D"].forEach(letter=>{
+
+let row = document.createElement("div");
+row.className="option-row";
+
+let radio = document.createElement("input");
+radio.type="radio";
+radio.name="option";
+radio.value=letter;
+
+if(answers[q.id]===letter)
+radio.checked=true;
+
+radio.onclick = ()=>{
+answers[q.id]=letter;
+statusMap[index]="answered";
+document.getElementById("reviewBtn").style.display="inline-block";
+updateColors();
+};
+
+let label=document.createElement("label");
+label.innerText = letter+") "+q["option_"+letter.toLowerCase()];
+
+row.appendChild(radio);
+row.appendChild(label);
+
+optionsDiv.appendChild(row);
+});
+
+if(statusMap[index]==="not_seen")
+statusMap[index]="seen";
+
+updateColors();
+}
+
+/* UPDATE COLORS */
+function updateColors(){
+let blocks=document.getElementsByClassName("q-number");
+
+Object.keys(statusMap).forEach(i=>{
+blocks[i].className="q-number";
+if(statusMap[i]==="answered") blocks[i].classList.add("answered");
+if(statusMap[i]==="review") blocks[i].classList.add("review");
+if(statusMap[i]==="seen") blocks[i].classList.add("seen");
+});
+}
+
+/* REVIEW */
+function markReview(){
+statusMap[currentIndex]="review";
+updateColors();
+}
+
+/* NEXT */
+function nextQuestion(){
+if(currentIndex+1<questions.length)
+loadQuestion(currentIndex+1);
+}
+
+/* TIMER */
+function startTimer(){
+
+let totalSeconds = durationMinutes * 60;
+
+let interval=setInterval(()=>{
+
+if(submitted) return;
+
+totalSeconds--;
+
+let min=Math.floor(totalSeconds/60);
+let sec=totalSeconds%60;
+
+document.getElementById("time").innerText=
+`${min}:${sec<10?'0':''}${sec}`;
+
+if(totalSeconds<=0){
+clearInterval(interval);
+submitExam(true);
+}
+
+},1000);
+}
+
+/* SUBMIT */
+async function submitExam(timeUp=false){
+
+if(submitted) return;
+
+submitted=true;
+
+await fetch(
+`http://localhost:8000/exams/${sessionId}/submit`,
+{
+method:"POST",
+headers:{
+"Content-Type":"application/json",
+Authorization:`Bearer ${token}`
+},
+body:JSON.stringify(answers)
+}
+);
+
+document.body.innerHTML=
+`<div class="block-popup">
+${timeUp?"Time is up.":"Submission successful."}
+Please wait for result publication.
+</div>`;
+}
+
+/* CAMERA */
+navigator.mediaDevices.getUserMedia({video:true})
+.then(stream=>{
+document.querySelector("video").srcObject=stream;
+setTimeout(monitorLoop, 1000);
+});
+
+loadQuestions();
+
+</script>
+</body>
+</html>

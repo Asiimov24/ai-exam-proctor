@@ -1,0 +1,108 @@
+<!DOCTYPE html>
+<html>
+<head>
+    <title>Face Verification</title>
+</head>
+<body>
+
+<h2>Face Verification</h2>
+
+<input type="number" id="examId" placeholder="Enter Exam ID" />
+<br><br>
+
+<video id="video" width="640" height="480" autoplay></video>
+<br><br>
+
+<button onclick="verifyFace()">Verify Identity</button>
+
+<script>
+document.addEventListener("contextmenu", e => e.preventDefault());
+
+let video = document.getElementById("video");
+
+// Start camera immediately
+navigator.mediaDevices.getUserMedia({ video: true })
+    .then(stream => {
+        video.srcObject = stream;
+    })
+    .catch(() => alert("Camera access denied"));
+
+async function verifyFace() {
+
+    const examId = document.getElementById("examId").value;
+
+    if (!examId) {
+        alert("Enter exam ID");
+        return;
+    }
+
+    const token = localStorage.getItem("access_token");
+
+    if (!token) {
+        alert("You must login first.");
+        return;
+    }
+
+    // Capture frame
+    const canvas = document.createElement("canvas");
+    canvas.width = video.videoWidth;
+    canvas.height = video.videoHeight;
+
+    const ctx = canvas.getContext("2d");
+    ctx.drawImage(video, 0, 0);
+
+    const blob = await new Promise(resolve =>
+        canvas.toBlob(resolve, "image/jpeg")
+    );
+
+    const formData = new FormData();
+    formData.append("file", blob);
+
+    // Send to backend for verification
+    const response = await fetch(
+        `http://localhost:8000/users/verify-face/${examId}`,
+        {
+            method: "POST",
+            headers: {
+                Authorization: `Bearer ${token}`
+            },
+            body: formData
+        }
+    );
+
+    if (!response.ok) {
+        alert("Face verification failed");
+        return;
+    }
+
+    alert("Face verified successfully");
+
+    // Automatically start session
+    const startResponse = await fetch(
+        `http://localhost:8000/sessions/start/${examId}`,
+        {
+            method: "POST",
+            headers: {
+                Authorization: `Bearer ${token}`
+            }
+        }
+    );
+
+    if (!startResponse.ok) {
+        alert("Failed to start session");
+        return;
+    }
+
+    const sessionData = await startResponse.json();
+
+    // Save session ID
+    localStorage.setItem("session_id", sessionData.session_id);
+    localStorage.setItem("exam_id", examId);
+
+    // Navigate to exam screen
+    window.api.navigate("exam.html");
+}
+</script>
+
+</body>
+</html>

@@ -1,0 +1,236 @@
+<!DOCTYPE html>
+<html>
+<head>
+    <title>AI Exam Proctor - Candidate</title>
+    <style>
+        body {
+            font-family: Arial;
+            text-align: center;
+            background-color: #f4f4f4;
+        }
+
+        video {
+            border: 2px solid black;
+            margin-top: 20px;
+        }
+
+        button {
+            padding: 10px 20px;
+            margin-top: 15px;
+            font-size: 16px;
+            cursor: pointer;
+        }
+
+        #status {
+            margin-top: 15px;
+            font-weight: bold;
+        }
+    </style>
+</head>
+<body>
+
+    <h2>AI Remote Proctoring - Candidate Panel</h2>
+
+    <input type="number" id="sessionId" placeholder="Enter Session ID" />
+    <br>
+
+    <button onclick="startMonitoring()">Start Monitoring</button>
+    <button onclick="stopMonitoring()">Stop Monitoring</button>
+
+    <br>
+
+    <video id="video" width="640" height="480" autoplay></video>
+
+    <div id="status"></div>
+
+<script>
+
+let video = document.getElementById("video");
+let statusDiv = document.getElementById("status");
+
+let stream = null;
+let monitoringActive = false;
+
+/* 🔒 NEW: Validate session before starting camera */
+async function validateSession(sessionId) {
+
+    const token = localStorage.getItem("access_token");
+
+    if (!token) {
+        alert("You must login first.");
+        return false;
+    }
+
+    try {
+        const response = await fetch(
+            "http://localhost:8000/admin/sessions",
+            {
+                headers: {
+                    "Authorization": "Bearer " + token
+                }
+            }
+        );
+
+        if (!response.ok) {
+            alert("Authorization failed.");
+            return false;
+        }
+
+        const sessions = await response.json();
+        const session = sessions.find(s => s.session_id == sessionId);
+
+        if (!session) {
+            alert("Invalid session ID.");
+            return false;
+        }
+
+        if (session.status !== "active") {
+            alert("Session is not active or already terminated.");
+            return false;
+        }
+
+        return true;
+
+    } catch (error) {
+        alert("Could not validate session.");
+        return false;
+    }
+}
+
+
+async function startMonitoring() {
+
+    if (monitoringActive) {
+        statusDiv.innerText = "Monitoring already running.";
+        return;
+    }
+
+    const sessionId = document.getElementById("sessionId").value;
+
+    if (!sessionId) {
+        alert("Please enter session ID");
+        return;
+    }
+
+    const token = localStorage.getItem("access_token");
+
+    if (!token) {
+        alert("You must login first.");
+        return;
+    }
+
+    try {
+        // ✅ Validate session before camera access
+        const validation = await fetch(
+            `http://localhost:8000/sessions/validate/${sessionId}`,
+            {
+                headers: {
+                    "Authorization": "Bearer " + token
+                }
+            }
+        );
+
+        const validationData = await validation.json();
+
+        if (!validationData.valid) {
+            alert("Cannot start exam: " + validationData.reason);
+            return;
+        }
+
+        // ✅ Only now start camera
+        stream = await navigator.mediaDevices.getUserMedia({ video: true });
+        video.srcObject = stream;
+        monitoringActive = true;
+        statusDiv.innerText = "Monitoring started...";
+
+        monitorLoop(sessionId);
+
+    } catch (error) {
+        alert("Error validating session.");
+        console.error(error);
+    }
+}
+
+
+
+async function monitorLoop(sessionId) {
+
+    if (!monitoringActive) return;
+
+    await sendFrame(sessionId);
+
+    if (!monitoringActive) return;
+
+    await new Promise(resolve => setTimeout(resolve, 2000));
+
+    monitorLoop(sessionId);
+}
+
+
+async function sendFrame(sessionId) {
+
+    if (!monitoringActive || !video.srcObject) return;
+
+    const canvas = document.createElement("canvas");
+    canvas.width = video.videoWidth;
+    canvas.height = video.videoHeight;
+
+    const ctx = canvas.getContext("2d");
+    ctx.drawImage(video, 0, 0);
+
+    const blob = await new Promise(resolve =>
+        canvas.toBlob(resolve, "image/jpeg")
+    );
+
+    const formData = new FormData();
+    formData.append("file", blob);
+
+    try {
+
+        const response = await fetch(
+            `http://localhost:8001/analyze/${sessionId}`,
+            {
+                method: "POST",
+                body: formData
+            }
+        );
+
+        const data = await response.json();
+
+        console.log("AI Response:", data);
+
+        if (data.backend) {
+            statusDiv.innerText =
+                "Warnings: " + data.backend.warnings +
+                " | Status: " + data.backend.status;
+        }
+
+        /* 🔒 AUTO STOP if terminated */
+        if (data.backend?.status === "terminated") {
+            alert("Exam terminated due to violations.");
+            stopMonitoring();
+        }
+
+    } catch (error) {
+        console.error("Error sending frame:", error);
+    }
+}
+
+
+function stopMonitoring() {
+
+    monitoringActive = false;
+
+    if (stream) {
+        stream.getTracks().forEach(track => track.stop());
+        stream = null;
+    }
+
+    video.srcObject = null;
+    statusDiv.innerText = "Monitoring stopped.";
+}
+
+</script>
+
+</body>
+</html>

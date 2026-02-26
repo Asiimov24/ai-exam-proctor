@@ -1,0 +1,13 @@
+{
+  "name": "electron_app",
+  "version": "1.0.0",
+  "description": "AI Exam Proctor Electron App",
+  "main": "main.js",
+  "type": "commonjs",
+  "scripts": {
+    "start": "electron ."
+  },
+  "dependencies": {
+    "electron": "^40.6.1"
+  }
+}

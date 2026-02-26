@@ -1,0 +1,46 @@
+<!DOCTYPE html>
+<html>
+<body>
+<h2>Candidate Login</h2>
+
+<input id="email" placeholder="Email"><br><br>
+<input id="password" type="password" placeholder="Password"><br><br>
+
+<button onclick="login()">Login</button>
+
+<script>
+document.addEventListener("contextmenu", e => e.preventDefault());
+
+async function login() {
+
+    const email = document.getElementById("email").value;
+    const password = document.getElementById("password").value;
+
+    const formData = new URLSearchParams();
+    formData.append("username", email);
+    formData.append("password", password);
+
+    const response = await fetch("http://localhost:8000/users/login", {
+        method: "POST",
+        body: formData
+    });
+
+    const data = await response.json();
+
+    if (!response.ok) {
+        alert("Login failed");
+        return;
+    }
+
+    //  Save token correctly
+    localStorage.setItem("access_token", data.access_token);
+
+    console.log("Token saved:", data.access_token);
+
+    //  Navigate AFTER saving token
+    window.api.navigate("verify.html");
+}
+</script>
+
+</body>
+</html>
