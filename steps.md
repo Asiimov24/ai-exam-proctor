@@ -1,4 +1,4 @@
-# 🚀 AI Exam Proctoring System – Complete Execution Guide
+# AI Exam Proctoring System – Complete Execution Guide
 
 This document explains how to run the full system from scratch.
 
