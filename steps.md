@@ -107,7 +107,7 @@ POST /admin/exams/{exam_id}/add-question
 
 Add questions
 
-# 💻 STEP 3 — Start Electron Exam Client
+# STEP 3 — Start Electron Exam Client
 
 Open Terminal 3.
 
@@ -123,7 +123,7 @@ Electron exam client will open.
 
 ---
 
-# 🎓 Candidate Exam Flow
+# Candidate Exam Flow
 
 1. Login as Candidate
 2. Enter Exam ID
@@ -141,7 +141,7 @@ Electron exam client will open.
 
 ---
 
-# 🔐 Violation Logic
+# Violation Logic
 
 LOW or MEDIUM severity:
 - Increments warning count
@@ -159,7 +159,7 @@ After termination:
 
 ---
 
-# 📊 Data Stored in Database
+# Data Stored in Database
 
 - Exam Sessions
 - Violations
@@ -169,7 +169,7 @@ After termination:
 
 ---
 
-# 🛑 Important Notes
+# Important Notes
 
 - Keep Docker running
 - Do not close Terminal 1
@@ -179,7 +179,7 @@ After termination:
 
 ---
 
-# ✅ System Architecture Ports
+# System Architecture Ports
 
 | Service       | Port |
 |--------------|------|
